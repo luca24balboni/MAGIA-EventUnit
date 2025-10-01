@@ -225,7 +225,7 @@ else
 	tb         := magia_tile_tb
 endif
 WAVES        := $(mkfile_path)/wave.do
-bender_targs += -t redmule_complex
+bender_targs += -t redmule_hwpe
 bender_targs += -t cv32e40x_bhv
 
 update-ips:
