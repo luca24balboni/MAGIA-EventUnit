@@ -30,7 +30,7 @@
 // Event Unit Register Map - Base addresses and offsets
 //=============================================================================
 
-#define EU_BASE                      EVENT_UNIT_BASE           // 0x800
+#define EU_BASE                      EVENT_UNIT_BASE       
 
 // Core Event Unit registers - Main control and status
 #define EU_CORE_MASK                 (EU_BASE + 0x00)          // R/W: Event mask (enables event lines)
@@ -223,7 +223,6 @@ static inline void eu_disable_irq(uint32_t irq_mask) {
  * @param event_mask Bitmask of events to clear
  */
 static inline void eu_clear_events(uint32_t event_mask) {
-    printf("DEBUG SW: eu_clear_events - clearing event_mask=0x%08x\n", event_mask);
     mmio32(EU_CORE_BUFFER_CLEAR) = event_mask;
 }
 
@@ -257,11 +256,7 @@ static inline uint32_t eu_get_events_irq_masked(void) {
  * @return Non-zero if any of the specified events are present
  */
 static inline uint32_t eu_check_events(uint32_t event_mask) {
-    uint32_t buffer_masked = mmio32(EU_CORE_BUFFER_MASKED);
-    uint32_t result = buffer_masked & event_mask;
-    printf("DEBUG SW: eu_check_events - buffer_masked=0x%08x, event_mask=0x%08x, result=0x%08x\n", 
-           buffer_masked, event_mask, result);
-    return result;
+    return mmio32(EU_CORE_BUFFER_MASKED) & event_mask;
 }
 
 //=============================================================================
@@ -280,8 +275,6 @@ static inline uint32_t eu_wait_events_polling(uint32_t event_mask, uint32_t time
     
     do {
         detected_events = eu_check_events(event_mask);
-        printf("DEBUG SW: eu_wait_events_polling - buffer_masked=0x%08x, event_mask=0x%08x, detected_events=0x%08x, cycles=%d\n", 
-               mmio32(EU_CORE_BUFFER_MASKED), event_mask, detected_events, cycles);
         if (detected_events) {
             return detected_events;
         }
@@ -291,7 +284,6 @@ static inline uint32_t eu_wait_events_polling(uint32_t event_mask, uint32_t time
         
     } while (timeout_cycles == 0 || cycles < timeout_cycles);
     
-    printf("DEBUG SW: eu_wait_events_polling - TIMEOUT after %d cycles\n", cycles);
     return 0; // Timeout
 }
 
@@ -708,25 +700,20 @@ static inline uint32_t eu_multi_wait_all(uint32_t wait_redmule, uint32_t wait_id
         eu_clear_events(accumulated_events);
         return accumulated_events;
     } else {
-        // Polling mode with timeout protection - accumulate events until all required are present
+        // Polling mode with timeout protection
         uint32_t timeout_cycles = 1000000;
         uint32_t cycles = 0;
-        uint32_t accumulated_events = 0;
         
-        while (cycles < timeout_cycles && (accumulated_events & required_mask) != required_mask) {
-            // Calculate which events we still need
-            uint32_t missing_events = required_mask & ~accumulated_events;
+        while (cycles < timeout_cycles) {
+            // Wait for any of the required events
+            uint32_t detected_events = eu_wait_events(wait_mask, mode, 100); // Short timeout per iteration
             
-            // Wait for any of the missing events
-            uint32_t detected_events = eu_wait_events(missing_events, mode, 100); // Short timeout per iteration
+            // Check if we have ALL required events
+            if ((detected_events & required_mask) == required_mask) {
+                return detected_events; // All events present!
+            }
             
-            printf("DEBUG SW: eu_multi_wait_all - accumulated=0x%08x, detected=0x%08x, missing=0x%08x, cycles=%d\n", 
-                   accumulated_events, detected_events, missing_events, cycles);
-            
-            // Accumulate detected events
-            accumulated_events |= detected_events;
-            
-            // If we detected some events, clear them from the buffer (but keep accumulated)
+            // If partial events, clear them and continue waiting for remaining
             if (detected_events) {
                 eu_clear_events(detected_events);
             }
@@ -734,12 +721,7 @@ static inline uint32_t eu_multi_wait_all(uint32_t wait_redmule, uint32_t wait_id
             cycles += 100;
         }
         
-        // Check if we got all required events
-        if ((accumulated_events & required_mask) == required_mask) {
-            return accumulated_events; // All events present!
-        } else {
-            return 0; // Timeout - not all events received
-        }
+        return 0; // Timeout - not all events received (polling mode only)
     }
 }
 

@@ -21,6 +21,7 @@
 
 module magia_event_unit
 import magia_tile_pkg::*;
+import magia_pkg::*;
 #(
   // MAGIA Event Unit Parameters - Optimized for single-core system
   parameter int unsigned NB_CORES = 1,              // Single core system
@@ -72,13 +73,22 @@ import magia_tile_pkg::*;
   // Internal signals
   logic soc_periph_evt_ready_internal;
   
-  // Simple OBI to XBAR_PERIPH_BUS conversion - all accesses via speriph_slave
-  assign speriph_slave.req   = obi_req_i.req;
-  assign speriph_slave.add   = obi_req_i.a.addr;
-  assign speriph_slave.wen   = ~obi_req_i.a.we;       // OBI: we=1→write, XBAR: wen=0→write
+  // Address range check and offset calculation
+  localparam logic [magia_pkg::ADDR_W-1:0] EU_BASE_ADDR = magia_tile_pkg::EVENT_UNIT_ADDR_START;
+  logic addr_in_range;
+  logic [magia_pkg::ADDR_W-1:0] addr_offset;
+  
+  assign addr_in_range = (obi_req_i.a.addr >= magia_tile_pkg::EVENT_UNIT_ADDR_START) && 
+                         (obi_req_i.a.addr <= magia_tile_pkg::EVENT_UNIT_ADDR_END);
+  assign addr_offset   = obi_req_i.a.addr - EU_BASE_ADDR;
+  
+  // OBI to XBAR_PERIPH_BUS conversion - pass RELATIVE address (offset from base)
+  assign speriph_slave.req   = obi_req_i.req && addr_in_range;
+  assign speriph_slave.add   = addr_offset;           
+  assign speriph_slave.wen   = ~obi_req_i.a.we;       
   assign speriph_slave.wdata = obi_req_i.a.wdata;
   assign speriph_slave.be    = obi_req_i.a.be;
-  assign speriph_slave.id    = '0;                    // Use zero ID with correct width
+  assign speriph_slave.id    = '0;                   
 
   // Direct response mapping - no mux needed
   assign obi_rsp_o.gnt         = speriph_slave.gnt;
