@@ -94,7 +94,7 @@ import magia_pkg::*;
   assign obi_rsp_o.gnt         = speriph_slave.gnt;
   assign obi_rsp_o.rvalid      = speriph_slave.r_valid;
   assign obi_rsp_o.r.rdata     = speriph_slave.r_rdata;
-  assign obi_rsp_o.r.err       = 1'b0;  // No errors for now
+  assign obi_rsp_o.r.err       = speriph_slave.r_opc;
 
   // Tie off eu_direct_link interfaces (not used - all accesses via speriph_slave)
   for (genvar i = 0; i < NB_CORES; i++) begin : gen_tie_off_direct_link
