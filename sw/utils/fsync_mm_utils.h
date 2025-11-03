@@ -36,17 +36,17 @@
 
 /* Memory-mapped sync function */
 static inline void fsync_mm(volatile uint32_t id, volatile uint32_t aggregate){
-  volatile uint32_t *fsync_base = (volatile uint32_t *)(FSYNC_BASE);
+  volatile char *fsync_base = (volatile char *)(FSYNC_BASE);
   
-  fsync_base[FSYNC_MM_AGGR_REG_OFFSET/4] = aggregate;
-  fsync_base[FSYNC_MM_ID_REG_OFFSET/4] = id;
-  fsync_base[FSYNC_MM_CONTROL_REG_OFFSET/4] = 1;
+  *(volatile uint32_t *)(fsync_base + FSYNC_MM_AGGR_REG_OFFSET) = aggregate;
+  *(volatile uint32_t *)(fsync_base + FSYNC_MM_ID_REG_OFFSET) = id;
+  *(volatile uint32_t *)(fsync_base + FSYNC_MM_CONTROL_REG_OFFSET) = 1;
   
 #ifdef STALLING
   // Polling mode - wait for completion
   volatile uint32_t status;
   do {
-    status = fsync_base[FSYNC_MM_STATUS_REG_OFFSET/4];
+    status = *(volatile uint32_t *)(fsync_base + FSYNC_MM_STATUS_REG_OFFSET);
   } while (status & FSYNC_MM_STATUS_BUSY_MASK);
 #endif
   // In non-stalling mode, the function returns immediately

@@ -51,7 +51,7 @@
 
 #define CONCURRENT
 
-#define IRQ_EN
+//#define IRQ_EN
 
 void idma_mv_in(unsigned int x_dim, unsigned int y_dim, uint16_t src_data[], uint32_t dst_address){
   uint32_t dst_addr;

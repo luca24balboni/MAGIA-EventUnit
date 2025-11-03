@@ -39,7 +39,7 @@ dependencies:
   tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.11                               }
   fractal_sync      : { git: "https://github.com/VictorIsachi/fractal_sync"           , rev: 7eb581d5e39f18498d30607263a000f444b4b63e } # branch: main
   floo_noc          : { git: "https://github.com/pulp-platform/FlooNoC.git"           , rev: f4a36265cda8b56faee45692afb20ddfffba6dee } # branch: main
-  event_unit_flex   : { git: "https://github.com/pulp-platform/event_unit_flex.git"  , rev: master } # master branch
+  event_unit_flex   : { git: "https://github.com/pulp-platform/event_unit_flex.git"  , rev: 763c3b9977970f656326c70a96debfb2ac0f85b2 } 
 
 export_include_dirs:
   - hw/include
@@ -71,14 +71,11 @@ sources:
       - hw/tile/converters/obi2hwpe_ctrl.sv
       - hw/tile/obi_demux_addr.sv
       - hw/tile/l1_spm.sv
-      - hw/tile/idma_xif_inst_decoder.sv
       - hw/tile/xif_inst_dispatcher.sv
       - hw/tile/idma_axi_obi_transfer_ch.sv
-      - hw/tile/idma_ctrl.sv
       - hw/tile/idma_obi_ctrl_decoder.sv
       - hw/tile/idma_ctrl_mm.sv
       - hw/tile/obi_slave_fsync.sv
-      - hw/tile/fractal_sync_xif_inst_decoder.sv
       - hw/tile/magia_tile.sv
       # MAGIA DV
       - target/sim/src/tile/magia_tile_tb_pkg.sv
@@ -118,14 +115,11 @@ sources:
       - hw/tile/converters/obi2hwpe_ctrl.sv
       - hw/tile/obi_demux_addr.sv
       - hw/tile/l1_spm.sv
-      - hw/tile/idma_xif_inst_decoder.sv
       - hw/tile/xif_inst_dispatcher.sv
       - hw/tile/idma_axi_obi_transfer_ch.sv
-      - hw/tile/idma_ctrl.sv
-      - hw/tile/idma_ctrl_mm.sv
       - hw/tile/idma_obi_ctrl_decoder.sv
+      - hw/tile/idma_ctrl_mm.sv
       - hw/tile/obi_slave_fsync.sv
-      - hw/tile/fractal_sync_xif_inst_decoder.sv
       - hw/tile/magia_tile.sv
       # MAGIA
       - hw/mesh/magia.sv
@@ -159,14 +153,11 @@ sources:
       - hw/tile/converters/obi2hwpe_ctrl.sv
       - hw/tile/obi_demux_addr.sv
       - hw/tile/l1_spm.sv
-      - hw/tile/idma_xif_inst_decoder.sv
       - hw/tile/xif_inst_dispatcher.sv
       - hw/tile/idma_axi_obi_transfer_ch.sv
-      - hw/tile/idma_ctrl.sv
-      - hw/tile/idma_ctrl_mm.sv
       - hw/tile/idma_obi_ctrl_decoder.sv
+      - hw/tile/idma_ctrl_mm.sv
       - hw/tile/obi_slave_fsync.sv
-      - hw/tile/fractal_sync_xif_inst_decoder.sv
       - hw/tile/magia_tile.sv
       # MAGIA
       - hw/mesh/noc/floo_axi_mesh_2x2_noc.sv
