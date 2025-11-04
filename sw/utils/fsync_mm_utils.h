@@ -18,10 +18,12 @@
  *          Based on fsync_isa_utils.h by Victor Isachi
  * 
  * MAGIA FractalSync Memory-Mapped Utils
+ * WARNING: Make sure to undefine EVENT_UNIT in this file if POLLING in registers mm is desired, otherwise polling mode will not work correctly
  */
 
 #ifndef FSYNC_MM_UTILS_H
 #define FSYNC_MM_UTILS_H
+#define EVENT_UNIT
 
 #include "magia_tile_utils.h"
 
@@ -41,16 +43,14 @@ static inline void fsync_mm(volatile uint32_t id, volatile uint32_t aggregate){
   *(volatile uint32_t *)(fsync_base + FSYNC_MM_AGGR_REG_OFFSET) = aggregate;
   *(volatile uint32_t *)(fsync_base + FSYNC_MM_ID_REG_OFFSET) = id;
   *(volatile uint32_t *)(fsync_base + FSYNC_MM_CONTROL_REG_OFFSET) = 1;
-  
-#ifdef STALLING
+
+#ifndef EVENT_UNIT
   // Polling mode - wait for completion
   volatile uint32_t status;
   do {
     status = *(volatile uint32_t *)(fsync_base + FSYNC_MM_STATUS_REG_OFFSET);
   } while (status & FSYNC_MM_STATUS_BUSY_MASK);
 #endif
-  // In non-stalling mode, the function returns immediately
-  // and the caller should do wfi to wait for interrupt
 }
 
 #endif /*FSYNC_MM_UTILS_H*/
