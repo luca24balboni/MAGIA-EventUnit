@@ -25,11 +25,7 @@ module obi_slave_fsync
   import magia_tile_pkg::*;
   import magia_pkg::*;
 #(
-<<<<<<< HEAD
-  parameter logic [ADDR_W-1:0] BASE_ADDR    = 32'h0000_0700,  // Base address for FSYNC registers
-=======
   parameter logic [ADDR_W-1:0] BASE_ADDR    = magia_tile_pkg::FSYNC_CTRL_ADDR_START,
->>>>>>> origin/main
   parameter int unsigned       AGGR_W       = magia_tile_pkg::FSYNC_AGGR_W,
   parameter int unsigned       ID_W         = magia_tile_pkg::FSYNC_ID_W,
   parameter int unsigned       NBR_AGGR_W   = magia_tile_pkg::FSYNC_NBR_AGGR_W,
