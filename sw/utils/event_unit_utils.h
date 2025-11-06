@@ -155,120 +155,65 @@
 //=============================================================================
 
 typedef enum {
-    EU_EVENT_TYPE_DMA = 0,        // iDMA events
-    EU_EVENT_TYPE_TIMER,          // Timer events
-    EU_EVENT_TYPE_ACCELERATOR,    // Accelerator events (RedMulE, etc.)
-    EU_EVENT_TYPE_FSYNC,          // FSync events
-    EU_EVENT_TYPE_SOFTWARE,       // Software events
-    EU_EVENT_TYPE_BARRIER,        // Barrier events
-    EU_EVENT_TYPE_CUSTOM          // Custom cluster events
-} eu_event_type_t;
-
-typedef enum {
     EU_WAIT_MODE_POLLING = 0,     // Busy wait polling
     EU_WAIT_MODE_WFE,             // Wait For Event (RISC-V)
-    EU_WAIT_MODE_IRQ              // Interrupt-based waiting
 } eu_wait_mode_t;
 
 //=============================================================================
-// Basic Event Unit Control Functions
+// Core Control Functions
 //=============================================================================
 
-/**
- * @brief Initialize Event Unit with default configuration
- */
+// Initialization
 static inline void eu_init(void) {
-    // Clear all pending events
     mmio32(EU_CORE_BUFFER_CLEAR) = 0xFFFFFFFF;
-    
-    // Reset masks to default (disabled)
     mmio32(EU_CORE_MASK) = 0x00000000;
     mmio32(EU_CORE_IRQ_MASK) = 0x00000000;
 }
 
-/**
- * @brief Enable specific event types in Event Unit mask
- * @param event_mask Bitmask of events to enable
- */
+// Event mask control
 static inline void eu_enable_events(uint32_t event_mask) {
     mmio32(EU_CORE_MASK_OR) = event_mask;
 }
 
-/**
- * @brief Disable specific event types in Event Unit mask
- * @param event_mask Bitmask of events to disable
- */
 static inline void eu_disable_events(uint32_t event_mask) {
     mmio32(EU_CORE_MASK_AND) = event_mask;
 }
 
-/**
- * @brief Enable IRQ for specific event types
- * @param irq_mask Bitmask of events that should trigger IRQ
- */
+// IRQ control
 static inline void eu_enable_irq(uint32_t irq_mask) {
     mmio32(EU_CORE_IRQ_MASK_OR) = irq_mask;
 }
 
-/**
- * @brief Disable IRQ for specific event types
- * @param irq_mask Bitmask of events that should not trigger IRQ
- */
 static inline void eu_disable_irq(uint32_t irq_mask) {
     mmio32(EU_CORE_IRQ_MASK_AND) = irq_mask;
 }
 
-/**
- * @brief Clear specific events from the buffer
- * @param event_mask Bitmask of events to clear
- */
+// Event buffer operations
 static inline void eu_clear_events(uint32_t event_mask) {
     mmio32(EU_CORE_BUFFER_CLEAR) = event_mask;
 }
 
-/**
- * @brief Get current event buffer (all events)
- * @return 32-bit event buffer value
- */
 static inline uint32_t eu_get_events(void) {
     return mmio32(EU_CORE_BUFFER);
 }
 
-/**
- * @brief Get current event buffer with mask applied
- * @return 32-bit masked event buffer value
- */
 static inline uint32_t eu_get_events_masked(void) {
     return mmio32(EU_CORE_BUFFER_MASKED);
 }
 
-/**
- * @brief Get current event buffer with IRQ mask applied
- * @return 32-bit IRQ-masked event buffer value
- */
 static inline uint32_t eu_get_events_irq_masked(void) {
     return mmio32(EU_CORE_BUFFER_IRQ_MASKED);
 }
 
-/**
- * @brief Check if specific events are present
- * @param event_mask Bitmask of events to check
- * @return Non-zero if any of the specified events are present
- */
 static inline uint32_t eu_check_events(uint32_t event_mask) {
     return mmio32(EU_CORE_BUFFER_MASKED) & event_mask;
 }
 
 //=============================================================================
-// Wait Functions - Different waiting strategies
+// Wait Functions
 //=============================================================================
 
-/**
- * @brief Wait for events using polling mode
- * @param event_mask Bitmask of events to wait for
- * @param timeout_cycles Maximum cycles to wait (0 = infinite)
- * @return Non-zero if events detected, 0 if timeout
- */
+// Polling mode wait
 static inline uint32_t eu_wait_events_polling(uint32_t event_mask, uint32_t timeout_cycles) {
     uint32_t cycles = 0;
     uint32_t detected_events;
@@ -276,6 +221,7 @@ static inline uint32_t eu_wait_events_polling(uint32_t event_mask, uint32_t time
     do {
         detected_events = eu_check_events(event_mask);
         if (detected_events) {
+            eu_clear_events(event_mask);
             return detected_events;
         }
         
@@ -284,313 +230,170 @@ static inline uint32_t eu_wait_events_polling(uint32_t event_mask, uint32_t time
         
     } while (timeout_cycles == 0 || cycles < timeout_cycles);
     
-    return 0; // Timeout
+    return 0;
 }
 
-/**
- * @brief Wait for events using RISC-V WFE instruction
- * @param event_mask Bitmask of events to wait for
- * @return Non-zero if events detected
- */
+// WFE mode wait
 static inline uint32_t eu_wait_events_wfe(uint32_t event_mask) {
     uint32_t detected_events;
+
+    eu_enable_irq(event_mask);// Ensure IRQs are enabled for the events being waited on
     
-    // First check if events are already present
     detected_events = eu_check_events(event_mask);
     if (detected_events) {
+        eu_clear_events(event_mask);
         return detected_events;
     }
     
-    // Enable IRQ for these events (required for WFE wake-up)
-    eu_enable_irq(event_mask);
-    
-    // Execute WFE instruction (CV32E40X specific: 0x8C000073)
     __asm__ volatile (".word 0x8C000073" ::: "memory");
     
-    // After wake-up, check for events
     detected_events = eu_check_events(event_mask);
+    if (detected_events) {
+        eu_clear_events(event_mask);
+    }
     return detected_events;
 }
 
-/**
- * @brief Wait for events using Event Unit built-in wait
- * @param clear_after_wait If true, clear events after waiting
- * @return Current event buffer value
- */
-static inline uint32_t eu_wait_events_builtin(uint32_t clear_after_wait) {
-    if (clear_after_wait) {
-        return mmio32(EU_CORE_EVENT_WAIT_CLEAR);
-    } else {
-        return mmio32(EU_CORE_EVENT_WAIT);
-    }
-}
-
-/**
- * @brief Generic wait function with selectable mode
- * @param event_mask Bitmask of events to wait for
- * @param mode Wait mode (polling, WFE, etc.)
- * @param timeout_cycles Timeout in cycles (polling mode only, 0 = infinite)
- * @return Non-zero if events detected, 0 if timeout
- */
+// Generic wait with mode selection
 static inline uint32_t eu_wait_events(uint32_t event_mask, eu_wait_mode_t mode, uint32_t timeout_cycles) {
     switch (mode) {
         case EU_WAIT_MODE_POLLING:
             return eu_wait_events_polling(event_mask, timeout_cycles);
-            
         case EU_WAIT_MODE_WFE:
             return eu_wait_events_wfe(event_mask);
-            
-        case EU_WAIT_MODE_IRQ:
-            // For IRQ mode, just enable IRQ and use built-in wait
-            eu_enable_irq(event_mask);
-            return eu_wait_events_builtin(1); // Clear after wait
-            
         default:
             return eu_wait_events_polling(event_mask, timeout_cycles);
     }
 }
 
 //=============================================================================
-// RedMulE-specific Event Functions
+// RedMulE Functions
 //=============================================================================
 
-/**
- * @brief Initialize Event Unit for RedMulE events
- * @param enable_irq If true, enable IRQ for RedMulE completion
- */
 static inline void eu_redmule_init(uint32_t enable_irq) {
-    // Clear any pending events
     eu_clear_events(0xFFFFFFFF);
-    
-    // Enable RedMulE events in mask
     eu_enable_events(EU_REDMULE_ALL_MASK);
     
-    // Optionally enable IRQ for RedMulE completion
     if (enable_irq) {
         eu_enable_irq(EU_REDMULE_DONE_MASK);
     }
 }
 
-/**
- * @brief Wait for RedMulE completion using specified mode
- * @param mode Wait mode (polling, WFE, etc.)
- * @return Non-zero if RedMulE completed, 0 if timeout/error
- */
 static inline uint32_t eu_redmule_wait_completion(eu_wait_mode_t mode) {
-    return eu_wait_events(EU_REDMULE_DONE_MASK, mode, 1000000); // 1M cycle timeout
+    return eu_wait_events(EU_REDMULE_DONE_MASK, mode, 1000000);
 }
 
-/**
- * @brief Check if RedMulE is currently busy
- * @return Non-zero if RedMulE is busy
- */
 static inline uint32_t eu_redmule_is_busy(void) {
     return eu_check_events(EU_REDMULE_BUSY_MASK);
 }
 
-/**
- * @brief Check if RedMulE has completed
- * @return Non-zero if RedMulE completed
- */
 static inline uint32_t eu_redmule_is_done(void) {
     return eu_check_events(EU_REDMULE_DONE_MASK);
 }
 
 //=============================================================================
-// iDMA-specific Event Functions  
+// iDMA Functions
 //=============================================================================
 
-/**
- * @brief Initialize Event Unit for iDMA events
- * @param enable_irq If true, enable IRQ for iDMA completion
- */
+// Initialization
 static inline void eu_idma_init(uint32_t enable_irq) {
-    // Clear any pending events
     eu_clear_events(0xFFFFFFFF);
-    
-    // Enable iDMA events in mask (both directions)
     eu_enable_events(EU_IDMA_ALL_MASK);
     
-    // Optionally enable IRQ for iDMA completion (both directions)
     if (enable_irq) {
         eu_enable_irq(EU_IDMA_ALL_DONE_MASK);
     }
 }
 
-/**
- * @brief Wait for any iDMA completion using specified mode
- * @param mode Wait mode (polling, WFE, etc.)
- * @return Non-zero if any iDMA completed, 0 if timeout/error
- */
+// Wait functions
 static inline uint32_t eu_idma_wait_completion(eu_wait_mode_t mode) {
-    return eu_wait_events(EU_IDMA_ALL_DONE_MASK, mode, 1000000); // 1M cycle timeout
+    return eu_wait_events(EU_IDMA_ALL_DONE_MASK, mode, 1000000);
 }
 
-/**
- * @brief Wait for specific iDMA direction completion
- * @param direction 0 = L2->L1 (A2O), 1 = L1->L2 (O2A)
- * @param mode Wait mode (polling, WFE, etc.)
- * @return Non-zero if specified direction completed, 0 if timeout/error
- */
 static inline uint32_t eu_idma_wait_direction_completion(uint32_t direction, eu_wait_mode_t mode) {
     uint32_t wait_mask = direction ? EU_IDMA_O2A_DONE_MASK : EU_IDMA_A2O_DONE_MASK;
-    return eu_wait_events(wait_mask, mode, 1000000); // 1M cycle timeout
+    return eu_wait_events(wait_mask, mode, 1000000);
 }
 
-/**
- * @brief Wait for L2->L1 (AXI2OBI) completion specifically
- * @param mode Wait mode (polling, WFE, etc.)
- * @return Non-zero if L2->L1 completed, 0 if timeout/error
- */
 static inline uint32_t eu_idma_wait_a2o_completion(eu_wait_mode_t mode) {
     return eu_wait_events(EU_IDMA_A2O_DONE_MASK, mode, 1000000);
 }
 
-/**
- * @brief Wait for L1->L2 (OBI2AXI) completion specifically  
- * @param mode Wait mode (polling, WFE, etc.)
- * @return Non-zero if L1->L2 completed, 0 if timeout/error
- */
 static inline uint32_t eu_idma_wait_o2a_completion(eu_wait_mode_t mode) {
     return eu_wait_events(EU_IDMA_O2A_DONE_MASK, mode, 1000000);
 }
 
-/**
- * @brief Check if any iDMA transfer has completed
- * @return Non-zero if any iDMA completed
- */
+// Status check functions
 static inline uint32_t eu_idma_is_done(void) {
     return eu_check_events(EU_IDMA_ALL_DONE_MASK);
 }
 
-/**
- * @brief Check if L2->L1 (AXI2OBI) transfer has completed
- * @return Non-zero if L2->L1 completed
- */
 static inline uint32_t eu_idma_a2o_is_done(void) {
     return eu_check_events(EU_IDMA_A2O_DONE_MASK);
 }
 
-/**
- * @brief Check if L1->L2 (OBI2AXI) transfer has completed
- * @return Non-zero if L1->L2 completed
- */
 static inline uint32_t eu_idma_o2a_is_done(void) {
     return eu_check_events(EU_IDMA_O2A_DONE_MASK);
 }
 
-/**
- * @brief Check if iDMA has error (using cluster events)
- * @return Non-zero if iDMA error occurred
- */
 static inline uint32_t eu_idma_has_error(void) {
     uint32_t events = eu_get_events();
     return events & (EU_IDMA_A2O_ERROR_MASK | EU_IDMA_O2A_ERROR_MASK);
 }
 
-/**
- * @brief Check if L2->L1 (AXI2OBI) has error
- * @return Non-zero if L2->L1 error occurred
- */
 static inline uint32_t eu_idma_a2o_has_error(void) {
     return eu_check_events(EU_IDMA_A2O_ERROR_MASK);
 }
 
-/**
- * @brief Check if L1->L2 (OBI2AXI) has error
- * @return Non-zero if L1->L2 error occurred
- */
 static inline uint32_t eu_idma_o2a_has_error(void) {
     return eu_check_events(EU_IDMA_O2A_ERROR_MASK);
 }
 
-/**
- * @brief Check if any iDMA transfer is busy
- * @return Non-zero if any iDMA busy
- */
 static inline uint32_t eu_idma_is_busy(void) {
     uint32_t events = eu_get_events();
     return events & (EU_IDMA_A2O_BUSY_MASK | EU_IDMA_O2A_BUSY_MASK);
 }
 
-/**
- * @brief Check if L2->L1 (AXI2OBI) transfer is busy
- * @return Non-zero if L2->L1 busy
- */
 static inline uint32_t eu_idma_a2o_is_busy(void) {
     return eu_check_events(EU_IDMA_A2O_BUSY_MASK);
 }
 
-/**
- * @brief Check if L1->L2 (OBI2AXI) transfer is busy
- * @return Non-zero if L1->L2 busy
- */
 static inline uint32_t eu_idma_o2a_is_busy(void) {
     return eu_check_events(EU_IDMA_O2A_BUSY_MASK);
 }
 
 //=============================================================================
-// FSync-specific Event Functions
+// FSync Functions
 //=============================================================================
 
-/**
- * @brief Initialize Event Unit for FSync events
- * @param enable_irq If true, enable IRQ for FSync completion
- */
 static inline void eu_fsync_init(uint32_t enable_irq) {
-    // Clear any pending events
     eu_clear_events(0xFFFFFFFF);
-    
-    // Enable FSync events in mask (bits 25:24)
     eu_enable_events(EU_FSYNC_ALL_MASK);
     
-    // Optionally enable IRQ for FSync completion (bit 24)
     if (enable_irq) {
         eu_enable_irq(EU_FSYNC_DONE_MASK);
     }
 }
 
-/**
- * @brief Wait for FSync completion using specified mode
- * @param mode Wait mode (polling, WFE, etc.)
- * @return Non-zero if FSync completed, 0 if timeout/error
- */
 static inline uint32_t eu_fsync_wait_completion(eu_wait_mode_t mode) {
-    return eu_wait_events(EU_FSYNC_DONE_MASK, mode, 1000000); // 1M cycle timeout
+    return eu_wait_events(EU_FSYNC_DONE_MASK, mode, 1000000);
 }
 
-/**
- * @brief Check if FSync has completed
- * @return Non-zero if FSync completed
- */
 static inline uint32_t eu_fsync_is_done(void) {
     return eu_check_events(EU_FSYNC_DONE_MASK);
 }
 
-/**
- * @brief Check if FSync has error
- * @return Non-zero if FSync error occurred
- */
 static inline uint32_t eu_fsync_has_error(void) {
     return eu_check_events(EU_FSYNC_ERROR_MASK);
 }
 
 //=============================================================================
-// Multi-accelerator Event Functions
+// Multi-Accelerator Functions
 //=============================================================================
 
-/**
- * @brief Initialize Event Unit for multiple accelerators
- * @param redmule_enable Enable RedMulE events
- * @param idma_a2o_enable Enable iDMA A2O (L2->L1) events
- * @param idma_o2a_enable Enable iDMA O2A (L1->L2) events
- * @param fsync_enable Enable FSync events
- * @param enable_irq Enable IRQ for completion events
- */
 static inline void eu_multi_init(uint32_t redmule_enable, uint32_t idma_a2o_enable, 
                                  uint32_t idma_o2a_enable, uint32_t fsync_enable, 
                                  uint32_t enable_irq) {
-    // Clear all pending events
     eu_clear_events(0xFFFFFFFF);
     
     uint32_t event_mask = 0;
@@ -616,34 +419,15 @@ static inline void eu_multi_init(uint32_t redmule_enable, uint32_t idma_a2o_enab
         if (enable_irq) irq_mask |= EU_FSYNC_DONE_MASK;
     }
     
-    // Enable selected events
     if (event_mask) {
         eu_enable_events(event_mask);
     }
     
-    // Enable selected IRQs
     if (irq_mask) {
         eu_enable_irq(irq_mask);
     }
 }
 
-/**
- * @brief Wait for any of the specified accelerator completions
- * @param wait_redmule Wait for RedMulE completion
- * @param wait_idma Wait for iDMA completion
- * @param wait_fsync Wait for FSync completion
- * @param mode Wait mode (polling, WFE, etc.)
- * @return Bitmask of completed accelerators
- */
-/**
- * @brief Wait for ANY of the specified accelerator events to complete
- * @param wait_redmule Wait for RedMulE completion (1) or ignore (0)
- * @param wait_idma_a2o Wait for IDMA A2O (L2->L1) completion (1) or ignore (0)
- * @param wait_idma_o2a Wait for IDMA O2A (L1->L2) completion (1) or ignore (0)
- * @param wait_fsync Wait for FSync completion (1) or ignore (0)
- * @param mode Wait mode (WFE, polling, etc.)
- * @return Event mask when any event is detected
- */
 static inline uint32_t eu_multi_wait_any(uint32_t wait_redmule, uint32_t wait_idma_a2o, 
                                          uint32_t wait_idma_o2a, uint32_t wait_fsync, 
                                          eu_wait_mode_t mode) {
@@ -654,66 +438,44 @@ static inline uint32_t eu_multi_wait_any(uint32_t wait_redmule, uint32_t wait_id
     if (wait_idma_o2a) wait_mask |= EU_IDMA_O2A_DONE_MASK;
     if (wait_fsync) wait_mask |= EU_FSYNC_DONE_MASK;
     
-    return eu_wait_events(wait_mask, mode, 1000000); // 1M cycle timeout
+    return eu_wait_events(wait_mask, mode, 1000000);
 }
 
-/**
- * @brief Wait for ALL specified accelerator events to complete
- * @param wait_redmule Wait for RedMulE completion (1) or ignore (0)
- * @param wait_idma_a2o Wait for IDMA A2O (L2->L1) completion (1) or ignore (0)
- * @param wait_idma_o2a Wait for IDMA O2A (L1->L2) completion (1) or ignore (0)
- * @param wait_fsync Wait for FSync completion (1) or ignore (0)
- * @param mode Wait mode (WFE, polling, etc.)
- * @return Event mask when ALL required events are present
- */
 static inline uint32_t eu_multi_wait_all(uint32_t wait_redmule, uint32_t wait_idma_a2o, 
                                          uint32_t wait_idma_o2a, uint32_t wait_fsync, 
                                          eu_wait_mode_t mode) {
     uint32_t required_mask = 0;
     uint32_t wait_mask = 0;
     
-    // Build required events mask
     if (wait_redmule) required_mask |= EU_REDMULE_DONE_MASK;
     if (wait_idma_a2o) required_mask |= EU_IDMA_A2O_DONE_MASK;
     if (wait_idma_o2a) required_mask |= EU_IDMA_O2A_DONE_MASK;
     if (wait_fsync) required_mask |= EU_FSYNC_DONE_MASK;
     
-    // Build wait mask (same as required for initial wait)
     wait_mask = required_mask;
     
     if (mode == EU_WAIT_MODE_WFE) {
-        // True WFE: sleep until interrupt, no timeout
         uint32_t accumulated_events = 0;
         
         while ((accumulated_events & required_mask) != required_mask) {
-            // Calculate which events we still need
             uint32_t missing_events = required_mask & ~accumulated_events;
-            
-            // Wait only for missing events using pure WFE
             uint32_t detected_events = eu_wait_events(missing_events, EU_WAIT_MODE_WFE, 0);
-            
-            // Accumulate detected events (don't clear them yet)
             accumulated_events |= detected_events;
         }
         
-        // All events present! Clear them and return
         eu_clear_events(accumulated_events);
         return accumulated_events;
     } else {
-        // Polling mode with timeout protection
         uint32_t timeout_cycles = 1000000;
         uint32_t cycles = 0;
         
         while (cycles < timeout_cycles) {
-            // Wait for any of the required events
-            uint32_t detected_events = eu_wait_events(wait_mask, mode, 100); // Short timeout per iteration
+            uint32_t detected_events = eu_wait_events(wait_mask, mode, 100);
             
-            // Check if we have ALL required events
             if ((detected_events & required_mask) == required_mask) {
-                return detected_events; // All events present!
+                return detected_events;
             }
             
-            // If partial events, clear them and continue waiting for remaining
             if (detected_events) {
                 eu_clear_events(detected_events);
             }
@@ -721,46 +483,8 @@ static inline uint32_t eu_multi_wait_all(uint32_t wait_redmule, uint32_t wait_id
             cycles += 100;
         }
         
-        return 0; // Timeout - not all events received (polling mode only)
+        return 0;
     }
 }
 
-//=============================================================================
-// Clock Status Function
-//=============================================================================
-
-/**
- * @brief Check Event Unit clock status
- * @return Non-zero if Event Unit clock is enabled
- */
-static inline uint32_t eu_clock_is_enabled(void) {
-    return mmio32(EU_CORE_STATUS) & 0x1;
-}
-
-//=============================================================================
-// Software Event Functions
-//=============================================================================
-
-/**
- * @brief Trigger a software event
- * @param sw_event_id Software event ID (0-7 typically)
- */
-static inline void eu_trigger_sw_event(uint32_t sw_event_id) {
-    if (sw_event_id < 8) {
-        mmio32(EU_CORE_TRIGG_SW_EVENT + (sw_event_id * 4)) = 1;
-    }
-}
-
-/**
- * @brief Trigger software event and wait for response
- * @param sw_event_id Software event ID
- * @return Event buffer value after wake-up
- */
-static inline uint32_t eu_trigger_sw_event_wait(uint32_t sw_event_id) {
-    if (sw_event_id < 8) {
-        return mmio32(EU_CORE_TRIGG_SW_EVENT_WAIT + (sw_event_id * 4));
-    }
-    return 0;
-}
-
-#endif /*EVENT_UNIT_UTILS_H*/
+#endif // EVENT_UNIT_UTILS_H
